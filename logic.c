@@ -8,12 +8,11 @@ int main() {
   char *s[3][6] = { { "Bob", "Chuck",  "Dave", "Ed", "Frank", "Gary"},
                     { "Hall", "King", "Noyes", "Pinza", "Veery", "White"},
                     { "AL", "AR", "AS", "ML", "MR", "MS" } };
-  int a[6][2], p[6], q[6];
-  REP(i, 6) p[i] = q[i] = i;
   void x(int *i, int *j) {
     int t = *i;
     *i = *j, *j = t;
   }
+  int a[6][2];
   int get(int m, int i, int n) {
     REP(k, 6) if ((m ? a[k][m-1] : k) == i) return a[k][n-1];
     fprintf(stderr, "BUG!\n"), exit(1);
@@ -74,27 +73,18 @@ int main() {
     NE(0, 4, 1, 4);
     return 1;
   }
-  void f(int m, int n) {
-    if (!m) {
-      if (!n && g()) {
-        REP(k, 6) printf("%s, %s, %s\n", s[0][k], s[1][a[k][0]], s[2][a[k][1]]);
-        return;
-      }
-      REP(k, n) {
-        a[n-1][1] = q[k];
-        x(q+k, q+n-1);
-        f(m, n-1);
-        x(q+k, q+n-1);
-      }
+  int n[2] = { 6, 6 }, p[2][6];
+  REP(i, 2) REP(j, 6) p[i][j] = j;
+  void f() {
+    int i = 0;
+    while(i < 2 && !n[i]) i++;
+    if (i == 2) {
+      if (g()) REP(k, 6) printf("%s, %s, %s\n", s[0][k], s[1][a[k][0]], s[2][a[k][1]]);
       return;
     }
-    REP(k, m) {
-      a[m-1][0] = p[k];
-      x(p+k, p+m-1);
-      f(m-1, n);
-      x(p+k, p+m-1);
-    }
+    int *q = p[i];
+    REP(k, n[i]) a[--n[i]][i] = q[k], x(q+k, q+n[i]), f(), x(q+k, q+n[i]++);
   }
-  f(6, 6);
+  f();
   return 0;
 }
