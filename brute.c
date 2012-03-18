@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "def.h"
 
 #define REP(i, n) for(int i=0; i<n; i++)
-#define NE(m, i, n, j) if (get(m, i, n) == j) return 0;
+#define NE(m, n) if (eq(m, n)) return 0;
 
 int main() {
   char *s[3][6] = { { "Bob", "Chuck",  "Dave", "Ed", "Frank", "Gary"},
@@ -15,62 +16,52 @@ int main() {
   int a[6][2];
   int get(int m, int i, int n) {
     REP(k, 6) if ((m ? a[k][m-1] : k) == i) return a[k][n-1];
-    fprintf(stderr, "BUG!\n"), exit(1);
+    fprintf(stderr, "unreachable!\n"), exit(1);
   }
+  int eq(int m, int i, int n, int j) { return get(m, i, n) == j; }
   int g() {
     // 1. Every order was different.
     //
     // 2. Bob, King, and a man who ordered ravioli...
     //    Chuck, Hall, and a man who ordered spaghetti...
-    if (get(0, 0, 2)/3 != get(1, 1, 2)/3) return 0;
-    if (get(0, 1, 2)/3 != get(1, 0, 2)/3) return 0;
-    NE(0, 0, 1, 0);
-    NE(0, 0, 1, 1);
-    NE(0, 0, 2, 1);
-    NE(0, 0, 2, 4);
-    NE(1, 1, 2, 1);
-    NE(1, 1, 2, 4);
-
-    NE(0, 1, 1, 0);
-    NE(0, 1, 1, 1);
-    NE(0, 1, 2, 2);
-    NE(0, 1, 2, 5);
-    NE(1, 0, 2, 2);
-    NE(1, 0, 2, 5);
-
+    if (get(Bob, 2)/3 != get(King, 2)/3) return 0;
+    if (get(Chuck, 2)/3 != get(Hall, 2)/3) return 0;
+    NE(Bob, King)
+    NE(Bob, Hall);
+    NE(Bob, AR);
+    NE(Bob, MR);
+    NE(King, AR);
+    NE(King, MR);
+    NE(Chuck, Hall);
+    NE(Chuck, King);
+    NE(Chuck, AS);
+    NE(Chuck, MS);
+    NE(Hall, AS);
+    NE(Hall, MS);
     // 3. Gary and White both ordered lasagna; Hall did not.
-    NE(0, 5, 1, 5);
-
-    NE(0, 5, 2, 1);
-    NE(0, 5, 2, 2);
-    NE(0, 5, 2, 4);
-    NE(0, 5, 2, 5);
-
-    NE(1, 5, 2, 1);
-    NE(1, 5, 2, 2);
-    NE(1, 5, 2, 4);
-    NE(1, 5, 2, 5);
-
-    NE(0, 5, 1, 0);
-
-    NE(1, 0, 2, 0);
-    NE(1, 0, 2, 3);
-
+    NE(Gary, AR);
+    NE(Gary, AS);
+    NE(Gary, MR);
+    NE(Gary, MS);
+    NE(White, AR);
+    NE(White, AS);
+    NE(White, MR);
+    NE(White, MS);
+    NE(Hall, AL);
+    NE(Hall, ML);
+    NE(Gary, White);
+    NE(Gary, Hall);
     // 4. Frank didn't order minestrone; neither he nor Pinza ordered ravioli.
-    NE(0, 4, 2, 3);
-    NE(0, 4, 2, 5);
-
-    NE(0, 4, 2, 1);
-    NE(0, 4, 2, 4);
-
-    NE(1, 3, 2, 1);
-    NE(1, 3, 2, 4);
-
-    NE(0, 4, 1, 3);
-
+    NE(Frank, ML);
+    NE(Frank, MR);
+    NE(Frank, MS);
+    NE(Frank, AR);
+    NE(Pinza, AR);
+    NE(Pinza, MR);
+    NE(Frank, Pinza);
     // 5. Neither Ed nor Frank are Veery.
-    NE(0, 3, 1, 4);
-    NE(0, 4, 1, 4);
+    NE(Ed, Veery);
+    NE(Frank, Veery);
     return 1;
   }
   int n[2] = { 6, 6 }, p[2][6];
