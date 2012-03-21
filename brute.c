@@ -28,8 +28,7 @@ int main() {
 #define MLas 2, 3
 #define MRav 2, 4
 #define MSpa 2, 5
-  int a[6][2], swp;
-  void x(int *i, int *j) { swp = *i, *i = *j, *j = swp; }
+  int a[6][2];
   int has(int k, int m, int i) { return (m ? a[k][m-1] : k) == i; }
   int starter(int m, int i) {
     F(k, 6) if (has(k, m, i)) return a[k][1]/3;
@@ -65,7 +64,7 @@ int main() {
   void f() {
     F(i, 2) if (n[i]) {
       int *q = p[i];
-      F(k, n[i]) a[--n[i]][i] = q[k], x(q+k, q+n[i]), f(), x(q+k, q+n[i]++);
+      F(k, n[i]) a[--n[i]][i] = q[k], q[k] = q[n[i]], f(), q[k] = a[n[i]++][i];
       return;
     }
     if (g()) F(k, 6) printf("%s %s %s\n", s[0][k], s[1][*a[k]], s[2][a[k][1]]);
