@@ -3,16 +3,16 @@ Alice Giselle Larry Nathanael Rebecca
 blackjack chocolate shopping smoking soap
 bicycling music photography rafting weaving
 %%
-N Larry weaving
-E Rebecca soap
-E rafting shopping
-E Mar27 smoking
-N Mar27 Rebecca
-N Alice smoking
-E Larry rafting
-E Jul15 music
-N Giselle chocolate Sep13 bicycling Rebecca
-N Nathanael music
-N photography smoking
-N Jan2 photography
-N Alice chocolate
+! Larry weaving
+= Rebecca soap
+= rafting shopping
+= Mar27 smoking
+! Mar27 Rebecca
+! Alice smoking
+= Larry rafting
+= Jul15 music
+! Giselle chocolate Sep13 bicycling Rebecca
+! Nathanael music
+! photography smoking
+! Jan2 photography
+! Alice chocolate

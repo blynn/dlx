@@ -1,8 +1,20 @@
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define F(i, n) for(int i=0; i<n; i++)
+
+#define NORETURN __attribute__((__noreturn__))
+void die(const char *err, ...) NORETURN __attribute__((format (printf, 1, 2)));
+void die(const char *err, ...) {
+  va_list params;
+  va_start(params, err);
+  vfprintf(stderr, err, params);
+  fputc('\n', stderr);
+  va_end(params);
+  exit(1);
+}
 
 void fword(char *s, void f(char *)) {
   for(;;) {
@@ -25,24 +37,23 @@ char *mallocgets() {
 
 struct hint_s {
   char cmd;
-  int i[16], j[16], n;
-} hint[16];
+  int i[16], j[16], k[16], n;
+} hint[128];
 typedef struct hint_s *hint_ptr;
 
 int main() {
   int dim = 0, m = 0;
-  char *sym[8][8];
+  char *sym[16][16];
 
   for(char *s = 0; (s = mallocgets()) && strcmp(s, "%%"); free(s)) {
     int i = 0;
-    void f(char *s) { sym[dim][i++] = strdup(s); }
-    fword(s, f);
-    if (!dim) {
-      m = i;
-    } else if (m != i) {
-      fprintf(stderr, "line %d: wrong number of fields\n", dim + 1);
-      exit(1);
+    void f(char *s) {
+      F(i, dim) F(j, m) if (!strcmp(sym[i][j], s)) die("duplicate symbol: %s", s);
+      F(j, i) if (!strcmp(sym[dim][j], s)) die("duplicate symbol: %s", s);
+      sym[dim][i++] = strdup(s);
     }
+    fword(s, f);
+    if (!dim) m = i; else if (m != i) die("line %d: wrong number of fields", dim + 1);
     dim++;
   }
   hint_ptr hinte = hint;
@@ -54,14 +65,19 @@ int main() {
         hinte->n++;
         return;
       }
+      hinte->k[hinte->n] = 0;
+      char *d = strchr(s, '.');
+      if (d) {
+        *d = 0;
+        hinte->k[hinte->n] = atoi(d+1);
+      }
       F(i, dim) F(j, m) if (!strcmp(sym[i][j], s)) {
         hinte->i[hinte->n] = i;
         hinte->j[hinte->n] = j;
         hinte->n++;
         return;
       }
-      fprintf(stderr, "invalid symbol: %s\n", s);
-      exit(1);
+      die("invalid symbol: %s", s);
     }
     fword(s, f);
     hinte++;
@@ -69,7 +85,8 @@ int main() {
 
   int n[dim-1], p[dim-1][m], a[m][dim-1];
 
-  int has(int k, int m, int i) { return (m ? a[k][m-1] : k) == i; }
+  int get(int k, int m) { return m ? a[k][m-1] : k; }
+  int has(int k, int m, int i) { return get(k, m) == i; }
 
   int match(hint_ptr p) {
     F(k, m) {
@@ -77,6 +94,10 @@ int main() {
       F(n, p->n) if ((t += has(k, p->i[n], p->j[n])) > 1) return 1;
     }
     return 0;
+  }
+  int attr(hint_ptr p, int n) {
+    F(k, m) if (get(k, p->i[n]) == p->j[n]) return get(k, p->k[n]);
+    die("unreachable");
   }
 
   F(i, dim-1) {
@@ -91,11 +112,23 @@ int main() {
     }
     for(hint_ptr p = hint; p != hinte; p++) {
       switch(p->cmd) {
-        case 'E':
+        case '=':
           if (!match(p)) return;
           break;
-        case 'N':
+        case '!':
           if (match(p)) return;
+          break;
+        case '<':
+          if (attr(p, 0) >= attr(p, 1)) return;
+          break;
+        case '>':
+          if (attr(p, 0) <= attr(p, 1)) return;
+          break;
+        case '1':
+          if (attr(p, 0) + 1 != attr(p, 1)) return;
+          break;
+        case 'A':
+          if (abs(attr(p, 0) - attr(p, 1)) != 1) return;
           break;
       }
     }
