@@ -7,17 +7,19 @@
 
 struct col_s;
 typedef struct col_s *col_ptr;
+struct cell_s;
+typedef struct cell_s *cell_ptr;
 
 struct cell_s {
-  struct cell_s *ud[2], *lr[2];
+  cell_ptr U, D, L, R;
   col_ptr c;
 };
 typedef struct cell_s *cell_ptr;
 
 struct col_s {
   // These 4 pointers must come first, and in this order.
-  cell_ptr ud[2];
-  col_ptr lr[2];
+  cell_ptr U, D;
+  col_ptr L, R;
   int s, n;
   cbt_it it;
 };
@@ -25,7 +27,7 @@ struct col_s {
 col_ptr col_new() {
   col_ptr c = malloc(sizeof(*c));
   c->s = 0;
-  c->ud[0] = c->ud[1] = (cell_ptr) c;
+  c->U = c->D = (cell_ptr) c;
   return c;
 }
 
@@ -41,7 +43,7 @@ dlx_t dlx_new() {
   p->ctab = cbt_new();
   p->rtab = cbt_new();
   col_ptr h = col_new();
-  h->lr[0] = h->lr[1] = h;
+  h->L = h->R = h;
   p->root = h;
   p->cur = 0;
   return p;
@@ -55,16 +57,16 @@ void dlx_add_col(dlx_t p, char *key) {
     return;
   }
   col_ptr c = col_new();
-  c->ud[0] = c->ud[1] = (cell_ptr) c;
-  col_ptr h = p->root, last = h->lr[0];
-  h->lr[0] = last->lr[1] = c, c->lr[0] = last, c->lr[1] = h;
+  c->U = c->D = (cell_ptr) c;
+  col_ptr h = p->root, last = h->L;
+  h->L = last->R = c, c->L = last, c->R = h;
   cbt_put(it, c);
   c->it = it;
   c->n = cbt_size(p->ctab) - 1;
 }
 
 void dlx_dump_col(dlx_t p) {
-  for(col_ptr c = p->root->lr[1]; c != p->root; c = c->lr[1]) {
+  for(col_ptr c = p->root->R; c != p->root; c = c->R) {
     printf("%s(%d)\n", cbt_key(c->it), c->n);
   }
 }
@@ -84,11 +86,11 @@ void dlx_add_row(dlx_t p, char *rkey, char *ckey) {
     return;
   }
   col_ptr c = cbt_get(it);
-  cell_ptr last = c->ud[0];
-  c->ud[0] = last->ud[1] = n;
-  n->ud[0] = last;
-  n->ud[1] = (cell_ptr) c;
-  n->lr[0] = n->lr[1] = n;
+  cell_ptr last = c->U;
+  c->U = last->D = n;
+  n->U = last;
+  n->D = (cell_ptr) c;
+  n->L = n->R = n;
   n->c = c;
   c->s++;
   p->cur = n;
@@ -112,14 +114,14 @@ void dlx_add_1(dlx_t p, char *key) {
     return;
   }
   cell_ptr n = malloc(sizeof(*n));
-  cell_ptr last = c->ud[0];
-  last->ud[1] = c->ud[0] = n;
-  n->ud[0] = last;
-  n->ud[1] = (cell_ptr) c;
-  cell_ptr next = p->cur->lr[1];
-  next->lr[0] = p->cur->lr[1] = n; 
-  n->lr[0] = p->cur;
-  n->lr[1] = next;
+  cell_ptr last = c->U;
+  last->D = c->U = n;
+  n->U = last;
+  n->D = (cell_ptr) c;
+  cell_ptr next = p->cur->R;
+  next->L = p->cur->R = n; 
+  n->L = p->cur;
+  n->R = next;
   n->c = c;
   c->s++;
   p->cur = n;
@@ -127,12 +129,12 @@ void dlx_add_1(dlx_t p, char *key) {
 
 void cover_col(col_ptr c) {
 //printf("cover %s\n", cbt_key(c->it));
-  c->lr[1]->lr[0] = c->lr[0];
-  c->lr[0]->lr[1] = c->lr[1];
-  for(cell_ptr i = c->ud[1]; i != (cell_ptr) c; i = i->ud[1]) {
-    for(cell_ptr j = i->lr[1]; j != i; j = j->lr[1]) {
-      j->ud[0]->ud[1] = j->ud[1];
-      j->ud[1]->ud[0] = j->ud[0];
+  c->R->L = c->L;
+  c->L->R = c->R;
+  for(cell_ptr i = c->D; i != (cell_ptr) c; i = i->D) {
+    for(cell_ptr j = i->R; j != i; j = j->R) {
+      j->U->D = j->D;
+      j->D->U = j->U;
       j->c->s--;
     }
   }
@@ -140,18 +142,18 @@ void cover_col(col_ptr c) {
 
 void uncover_col(col_ptr c) {
 //printf("uncover %s\n", cbt_key(c->it));
-  for(cell_ptr i = c->ud[0]; i != (cell_ptr) c; i = i->ud[0]) {
-    for(cell_ptr j = i->lr[0]; j != i; j = j->lr[0]) {
+  for(cell_ptr i = c->U; i != (cell_ptr) c; i = i->U) {
+    for(cell_ptr j = i->L; j != i; j = j->L) {
       j->c->s++;
-      j->ud[0]->ud[1] = j->ud[1]->ud[0] = j;
+      j->U->D = j->D->U = j;
     }
   }
-  c->lr[1]->lr[0] = c->lr[0]->lr[1] = c;
+  c->R->L = c->L->R = c;
 }
 
 static void cover_row(cell_ptr r) {
   cover_col(r->c);
-  for(cell_ptr j = r->lr[1]; j != r; j = j->lr[1]) {
+  for(cell_ptr j = r->R; j != r; j = j->R) {
     cover_col(j->c);
   }
 }
@@ -161,37 +163,37 @@ void dlx_search(dlx_t p) {
   darray_ptr sol = darray_new();
   void search(int k) {
 //printf("search %d\n", k);
-    col_ptr c = h->lr[1];
+    col_ptr c = h->R;
     if (c == h) {
       // Print solution.
       printf("solution:\n");
       void pr(void *data) {
         cell_ptr r = data;
-        while(r->lr[0]->c->n < r->c->n) r = r->lr[0];
+        while(r->L->c->n < r->c->n) r = r->L;
         do {
           printf(" %s", cbt_key(r->c->it));
-          r = r->lr[1];
-        } while (r->lr[1]->c->n > r->c->n);
+          r = r->R;
+        } while (r->R->c->n > r->c->n);
         printf("\n");
       }
       darray_forall(sol, pr);
       return;
     }
     int s = c->s;
-    for(col_ptr cc = c->lr[1]; cc != h; cc = cc->lr[1]) {
+    for(col_ptr cc = c->R; cc != h; cc = cc->R) {
       if (cc->s < s) c = cc, s = c->s;
     }
 printf("lvl %d: %s(%d)\n", k, cbt_key(c->it), s);
     if (!s) return;
     cover_col(c);
-    for(cell_ptr r = c->ud[1]; r != (cell_ptr) c; r = r->ud[1]) {
+    for(cell_ptr r = c->D; r != (cell_ptr) c; r = r->D) {
       darray_append(sol, r);
-      for(cell_ptr j = r->lr[1]; j != r; j = j->lr[1]) {
+      for(cell_ptr j = r->R; j != r; j = j->R) {
         cover_col(j->c);
       }
       search(k+1);
       darray_remove_last(sol);
-      for(cell_ptr j = r->lr[0]; j != r; j = j->lr[0]) {
+      for(cell_ptr j = r->L; j != r; j = j->L) {
         uncover_col(j->c);
       }
     }
