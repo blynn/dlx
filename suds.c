@@ -108,10 +108,8 @@ int main() {
     F(j, 9 && s[j] != '\n') a[i][j] = isdigit(s[j]) ? s[j] - '0' : 0;
   }
   void print_solution(int r) {
-    if (r >= 0) a[r/9%9][r%9] = r/9/9 + 1; else F(r, 9) {
-      F(c, 9) putchar('0'+a[r][c]);
-      putchar('\n');
-    }
+    if (r >= 0) a[r/9%9][r%9] = r/9/9 + 1;
+    else F(r, 9) F(c, 9 || (putchar('\n'), 0)) putchar('0'+a[r][c]);
   }
   dlx_t dlx = dlx_new(9*9*9, 4*9*9, 9*9, print_solution);
   int nine(int a, int b, int c) { return 9*9*a + 9*b + c; }
