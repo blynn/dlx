@@ -11,7 +11,8 @@ typedef struct dlx_s *dlx_t;
 // Returns new empty exact cover problem. No rows. No columns.
 dlx_t dlx_new();
 
-// TODO: dlx_clear();
+// Frees exact cover problem.
+void dlx_clear();
 
 // Returns number of rows.
 int dlx_rows(dlx_t dlx);
@@ -27,9 +28,10 @@ void dlx_set(dlx_t dlx, int row, int col);
 // but it still must respect the constraints it entails.
 void dlx_mark_optional(dlx_t dlx, int col);
 
-// Picks a row to be part of the solution.
+// Picks a row to be part of the solution. Returns 0 on success, -1 otherwise.
+// Should only be called after all dlx_set() calls.
 // TODO: Check the row can be legally chosen.
-void dlx_pick_row(dlx_t dlx, int row);
+int dlx_pick_row(dlx_t dlx, int row);
 
 // Runs the DLX algorithm, and for every exact cover, calls the given callback
 // with an array containing all the row numbers of the solution and the size of
@@ -45,8 +47,10 @@ void dlx_forall_cover(dlx_t dlx, void (*cb)(int rows[], int n));
 //
 // The callback cover_cb is given the column covered, the number of rows
 // that can legally cover the column, and the selected row.
+//
+// The callback stuck_cb is given the first uncoverable column.
 void dlx_solve(dlx_t dlx,
                void (*cover_cb)(int col, int s, int row),
                void (*uncover_cb)(),
                void (*found_cb)(),
-               void (*stuck_cb)());
+               void (*stuck_cb)(int col));

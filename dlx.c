@@ -1,25 +1,10 @@
-#define _GNU_SOURCE
-#include <ctype.h>
 #include <limits.h>
-#include <stdarg.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include "dlx.h"
 
 #define F(i,n) for(int i = 0; i < n; i++)
 
-#define C(i,n,dir) for(cell_ptr i = n->dir; i != n; i = i->dir)
-
-static void die(const char *err, ...) {
-  va_list params;
-
-  va_start(params, err);
-  vfprintf(stderr, err, params);
-  fputc('\n', stderr);
-  va_end(params);
-  exit(1);
-}
+#define C(i,n,dir) for(cell_ptr i = (n)->dir; i != n; i = i->dir)
 
 struct cell_s;
 typedef struct cell_s *cell_ptr;
@@ -81,6 +66,31 @@ dlx_t dlx_new() {
   return p;
 }
 
+void dlx_clear(dlx_t p) {
+  // Elements in the LR list for each row are never covered, thus all cells
+  // can be accessed from the 'rtab' LR lists.
+  F(i, p->rtabn) {
+    cell_ptr r = p->rtab[i];
+    if (r) {
+      cell_ptr next;
+      for(cell_ptr j = r->R; j != r; j = next) {
+        next = j->R;
+        free(j);
+      }
+      free(r);
+    }
+  }
+  // Columns may be covered, but they are always accessible from 'ctab'.
+  F(i, p->ctabn) free(p->ctab[i]);
+  free(p->rtab);
+  free(p->ctab);
+  free(p->root);
+  free(p);
+}
+
+int dlx_rows(dlx_t dlx) { return dlx->rtabn; }
+int dlx_cols(dlx_t dlx) { return dlx->ctabn; }
+
 void dlx_add_col(dlx_t p) {
   cell_ptr c = col_new();
   LR_insert(c, p->root);
@@ -92,10 +102,10 @@ void dlx_add_col(dlx_t p) {
 }
 
 void dlx_add_row(dlx_t p) {
-  if (++p->rtabn == p->rtab_alloc) {
+  if (p->rtabn == p->rtab_alloc) {
     p->rtab = realloc(p->rtab, sizeof(cell_ptr) * (p->rtab_alloc *= 2));
   }
-  p->rtab[p->rtabn] = 0;
+  p->rtab[p->rtabn++] = 0;
 }
 
 static void alloc_col(dlx_t p, int n) {
@@ -114,32 +124,33 @@ void dlx_mark_optional(dlx_t p, int col) {
 }
 
 void dlx_set(dlx_t p, int row, int col) {
+  // We don't bother sorting. DLX works fine with jumbled rows and columns.
+  // We just have to watch out for duplicates. (Actually, I think the DLX code
+  // works even with duplicates; it'll just be inefficient.)
+  //
+  // For a given column, the UD list is ordered in the order that dlx_set()
+  // is called, not by row number. Similarly for a given row and its LR list.
   alloc_row(p, row);
   alloc_col(p, col);
   cell_ptr c = p->ctab[col];
-  cell_ptr *rp = p->rtab + row;
-  if (!*rp) {
+  cell_ptr new1() {
     cell_ptr n = malloc(sizeof(*n));
-    LR_self(UD_insert(n, c));
     n->n = row;
     n->c = c;
     c->s++;
-    *rp = n;
+    UD_insert(n, c);
+    return n;
+  }
+  cell_ptr *rp = p->rtab + row;
+  if (!*rp) {
+    *rp = LR_self(new1());
     return;
   }
-  cell_ptr r =(*rp)->L;
-  if (c->n <= r->c->n) {
-    // We enforce this to avoid duplicate columns in a row, and for simplicity,
-    // though the algorithm works even if the columns were jumbled.
-    // TODO: Remove this restriction.
-    die("must add columns in increasing order: %d");
-  }
-  cell_ptr n = malloc(sizeof(*n));
-  UD_insert(n, c);
-  LR_insert(n, r);
-  n->c = c;
-  c->s++;
-  n->n = row;
+  // Ignore duplicates.
+  if ((*rp)->c->n == col) return;
+  C(r, *rp, R) if (r->c->n == col) return;
+  // Otherwise insert at end of LR list.
+  LR_insert(new1(), *rp);
 }
 
 static void cover_col(cell_ptr c) {
@@ -152,12 +163,13 @@ static void uncover_col(cell_ptr c) {
   LR_restore(c);
 }
 
-void dlx_pick_row(dlx_t p, int i) {
-  if (i >= p->rtabn) die("%d out of range", i);
+int dlx_pick_row(dlx_t p, int i) {
+  if (i >= p->rtabn) return -1;
   cell_ptr r = p->rtab[i];
-  if (!r) return;
+  if (!r) return 0;  // Empty row.
   cover_col(r->c);
   C(j, r, R) cover_col(j->c);
+  return 0;
 }
 
 void dlx_solve(dlx_t p,
@@ -174,7 +186,7 @@ void dlx_solve(dlx_t p,
     int s = INT_MAX;  // S-heuristic: choose first most-constrained column.
     C(i, p->root, R) if (i->s < s) s = (c = i)->s;
     if (!s) {
-      if (stuck_cb) stuck_cb();
+      if (stuck_cb) stuck_cb(c->n);
       return;
     }
     cover_col(c);
@@ -196,88 +208,4 @@ void dlx_forall_cover(dlx_t p, void (*cb)(int[], int)) {
   void uncover() { soln--; }
   void found() { cb(sol, soln); }
   dlx_solve(p, cover, uncover, found, NULL);
-}
-
-int dlx_rows(dlx_t dlx) { return dlx->rtabn; }
-int dlx_cols(dlx_t dlx) { return dlx->ctabn; }
-
-int main() {
-  static int grid[9][9];
-  F(i, 9) {
-    char *s = 0;
-    size_t len = 0;
-    if (-1 == getline(&s, &len, stdin)) die("input error");
-    F(j, 9) {
-      if (s[j] == '\n') break;
-      grid[i][j] = isdigit(s[j]) ? s[j] - '0' : 0;
-    }
-  }
-
-  dlx_t dlx = dlx_new();
-
-  int nine(int a, int b, int c) { return ((a * 9) + b) * 9 + c; }
-
-  // Add constraints.
-  F(n, 9) F(r, 9) F(c, 9) {
-    int row = nine(n, r, c);
-    dlx_set(dlx, row, nine(0, r, c));
-    dlx_set(dlx, row, nine(1, n, r));
-    dlx_set(dlx, row, nine(2, n, c));
-    dlx_set(dlx, row, nine(3, n, r / 3 * 3 + c / 3));
-  }
-
-  // Choose rows corresponding to given digits.
-  F(r, 9) F(c, 9) if (grid[r][c]) dlx_pick_row(dlx, nine(grid[r][c] - 1, r, c));
-
-  void pr(int row[], int n) {
-    F(i, n) grid[row[i] / 9 % 9][row[i] % 9] = 1 + row[i] / 9 / 9;
-    F(r, 9) {
-      F(c, 9) putchar(grid[r][c] + '0');
-      putchar('\n');
-    }
-  }
-  dlx_forall_cover(dlx, pr);
-
-  // Show how the search works, step by step.
-  {
-    char *spr(const char *fmt, ...) {
-      va_list params;
-      va_start(params, fmt);
-      char *s;
-      vasprintf(&s, fmt, params);
-      va_end(params);
-      return s;
-    }
-
-    char *con[729];  // Description of constraints.
-    int ncon = 0;
-    void add_con(char *id) {
-      con[ncon++] = id;
-    }
-    // Exactly one digit per box.
-    F(r, 9) F(c, 9) add_con(spr("! %d %d", r+1, c+1));
-    // Each digit appears exactly once per row.
-    F(n, 9) F(r, 9) add_con(spr("%d r %d", n+1, r+1));
-    // ...per column.
-    F(n, 9) F(c, 9) add_con(spr("%d c %d", n+1, c+1));
-    // ... and per 3x3 region.
-    F(n, 9) F(r, 3) F(c, 3) add_con(spr("%d x %d %d", n+1, r+1, c+1));
-
-    void cover(int c, int s, int r) {
-      if (s == 1) {
-        printf("%s forces %d @ %d %d\n", con[c], r/9/9+1, r/9%9+1, r%9+1);
-      } else {
-        printf("%s: %d choices\n", con[c], s);
-        printf("try %d @ %d %d\n", r/9/9+1, r/9%9+1, r%9+1);
-      }
-    }
-    void found() {
-      puts("solved!");
-    }
-    void stuck() {
-      puts("stuck! backtracking...");
-    }
-    dlx_solve(dlx, cover, NULL, found, stuck);
-  }
-  return 0;
 }
