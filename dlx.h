@@ -1,9 +1,9 @@
 struct dlx_s;
 typedef struct dlx_s *dlx_t;
+
 dlx_t dlx_new();
-void dlx_add_col(dlx_t);
-void dlx_add_row(dlx_t);
-void dlx_set_last_row(dlx_t, int col);
-void dlx_search(dlx_t p);
-void dlx_set_col_id(dlx_t, char *(*cb)(int));
-void dlx_mark_optional(dlx_t, int col);
+int dlx_rows(dlx_t dlx);
+int dlx_cols(dlx_t dlx);
+void dlx_set(dlx_t dlx, int row, int col);
+void dlx_mark_optional(dlx_t dlx, int col);
+void dlx_solve(dlx_t dlx, int (*cb)(int row[], int n));

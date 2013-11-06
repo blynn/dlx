@@ -30,12 +30,12 @@ void fword(char *s, void f(char *)) {
 }
 
 char *mallocgets() {
-    char *s = 0;
-    size_t len = 0;
-    if (-1 == getline(&s, &len, stdin)) return 0;
-    // Assumes newline before EOF.
-    s[strlen(s) - 1] = 0;
-    return s;
+  char *s = 0;
+  size_t len = 0;
+  if (-1 == getline(&s, &len, stdin)) return 0;
+  // Assumes newline before EOF.
+  s[strlen(s) - 1] = 0;
+  return s;
 }
 
 struct hint_s {
@@ -139,7 +139,7 @@ printf("nr: %s\n", s);
            tmp = p->j[0]; p->j[0] = p->j[1], p->j[1] = tmp;
            tmp = p->k[0]; p->k[0] = p->k[1], p->k[1] = tmp;
         }
-        // FALLT?HROUGH
+        // FALLTHROUGH
       case '<':
       case '1':
       case 'A':
@@ -153,7 +153,7 @@ printf("nr: %s\n", s);
   darray_forall(hints, optcol);
 
   void f(char *s, int i) {
-    int has(hint_ptr p, int i) {return a[p->i[i]] == p->j[i]; }
+    int has(hint_ptr p, int i) {return a[p->i[i]] == p->j[i];}
     int match(hint_ptr p) {
       int t = 0;
       F(n, p->n) t += has(p, n);
@@ -173,8 +173,6 @@ printf("nr: %s\n", s);
           case 'i': return has(p, 0) && (match(p) | 2) != 2;
           /*
           case '^': return matchcount(p) >= 2;
-          case '1': return attr(p, 0) + 1 != attr(p, 1);
-          case 'A': return abs(attr(p, 0) - attr(p, 1)) != 1;
         */
         }
         return 0;

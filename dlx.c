@@ -1,20 +1,15 @@
 #define _GNU_SOURCE
 #include <ctype.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "darray.h"
 #include "dlx.h"
 
 #define F(i,n) for(int i = 0; i < n; i++)
 
-#define VAPRINT(s, fmt) \
-    va_list params; \
-    va_start(params, fmt); \
-    char *s; \
-    vasprintf(&s, fmt, params); \
-    va_end(params);
+#define C(i,n,dir) for(cell_ptr i = n->dir; i != n; i = i->dir)
 
 static void die(const char *err, ...) {
   va_list params;
@@ -28,7 +23,6 @@ static void die(const char *err, ...) {
 
 struct cell_s;
 typedef struct cell_s *cell_ptr;
-
 struct cell_s {
   cell_ptr U, D, L, R;
   int n;
@@ -38,85 +32,99 @@ struct cell_s {
   };
 };
 
+// Some link dance moves.
+static cell_ptr LR_self(cell_ptr c) { return c->L = c->R = c; }
+static cell_ptr UD_self(cell_ptr c) { return c->U = c->D = c; }
+
+// Undeletable deletes.
+static cell_ptr LR_delete(cell_ptr c) {
+  return c->L->R = c->R, c->R->L = c->L, c;
+}
+static cell_ptr UD_delete(cell_ptr c) {
+  return c->U->D = c->D, c->D->U = c->U, c;
+}
+
+// Undelete.
+static cell_ptr UD_restore(cell_ptr c) { return c->U->D = c->D->U = c; }
+static cell_ptr LR_restore(cell_ptr c) { return c->L->R = c->R->L = c; }
+
+// Insert cell j to the left of cell k.
+static cell_ptr LR_insert(cell_ptr j, cell_ptr k) {
+  return j->L = k->L, j->R = k, k->L = k->L->R = j;
+}
+
+// Insert cell j above cell k.
+static cell_ptr UD_insert (cell_ptr j, cell_ptr k) {
+  return j->U = k->U, j->D = k, k->U = k->U->D = j;
+}
+
 cell_ptr col_new() {
   cell_ptr c = malloc(sizeof(*c));
-  c->s = 0;
-  c->U = c->D = c;
+  UD_self(c)->s = 0;
   return c;
 }
 
 struct dlx_s {
-  darray_ptr ctab, rtab;
+  int ctabn, rtabn, ctab_alloc, rtab_alloc;
+  cell_ptr *ctab, *rtab;
   cell_ptr root;
-  char *(*cid)(int);
 };
 typedef struct dlx_s *dlx_t;
 
-char *default_cid(int n) {
-  static char buf[16];
-  sprintf(buf, "%d", n);
-  return buf;
-}
-
 dlx_t dlx_new() {
   dlx_t p = malloc(sizeof(*p));
-  p->ctab = darray_new();
-  p->rtab = darray_new();
-  cell_ptr h = col_new();
-  h->L = h->R = h;
-  p->root = h;
-  p->cid = default_cid;
+  p->ctabn = p->rtabn = 0;
+  p->ctab_alloc = p->rtab_alloc = 8;
+  p->ctab = malloc(sizeof(cell_ptr) * p->ctab_alloc);
+  p->rtab = malloc(sizeof(cell_ptr) * p->rtab_alloc);
+  p->root = LR_self(col_new());
   return p;
 }
 
 void dlx_add_col(dlx_t p) {
   cell_ptr c = col_new();
-  c->U = c->D = c;
-  cell_ptr h = p->root;
-  c->L = h->L; h->L = h->L->R = c, c->R = h;
-  c->n = darray_count(p->ctab);
-  darray_append(p->ctab, c);
+  LR_insert(c, p->root);
+  c->n = p->ctabn++;
+  if (p->ctabn == p->ctab_alloc) {
+    p->ctab = realloc(p->ctab, sizeof(cell_ptr) * (p->ctab_alloc *= 2));
+  }
+  p->ctab[c->n] = c;
 }
 
 void dlx_add_row(dlx_t p) {
-  darray_append(p->rtab, 0);
+  if (++p->rtabn == p->rtab_alloc) {
+    p->rtab = realloc(p->rtab, sizeof(cell_ptr) * (p->rtab_alloc *= 2));
+  }
+  p->rtab[p->rtabn] = 0;
 }
 
-void dlx_alloc_col(dlx_t p, int n) {
-  while(darray_count(p->ctab) < n) dlx_add_col(p);
+static void alloc_col(dlx_t p, int n) {
+  while(p->ctabn <= n) dlx_add_col(p);
 }
 
-void dlx_alloc_row(dlx_t p, int n) {
-  while(darray_count(p->rtab) < n) dlx_add_row(p);
+static void alloc_row(dlx_t p, int n) {
+  while(p->rtabn <= n) dlx_add_row(p);
 }
 
 void dlx_mark_optional(dlx_t p, int col) {
-  dlx_alloc_col(p, col + 1);
-  cell_ptr c = (cell_ptr) darray_at(p->ctab, col);
-  c->L->R = c->R;
-  c->R->L = c->L;
-  c->L = c->R = c;
-}
-
-// Called by dlx_set the first time we add a 1 to a row.
-static cell_ptr row_first(dlx_t p, cell_ptr c, int row) {
-  cell_ptr n = malloc(sizeof(*n));
-  n->U = c->U;
-  c->U = c->U->D = n;
-  n->D = n->c = c;
-  n->L = n->R = n;
-  c->s++;
-  n->n = row;
-  return n;
+  alloc_col(p, col);
+  cell_ptr c = p->ctab[col];
+  // Prevent undeletion by self-linking.
+  LR_self(LR_delete(c));
 }
 
 void dlx_set(dlx_t p, int row, int col) {
-  dlx_alloc_row(p, row + 1);
-  dlx_alloc_col(p, col + 1);
-  cell_ptr c = (cell_ptr) darray_at(p->ctab, col);
-  cell_ptr *rp = (cell_ptr *) p->rtab->item + row;
+  alloc_row(p, row);
+  alloc_col(p, col);
+  cell_ptr c = p->ctab[col];
+  cell_ptr *rp = p->rtab + row;
   if (!*rp) {
-    *rp = row_first(p, c, row);
+    cell_ptr n = malloc(sizeof(*n));
+    LR_self(UD_insert(n, c));
+    n->n = row;
+    n->c = c;
+    c->s++;
+    *rp = n;
     return;
   }
   cell_ptr r =(*rp)->L;
@@ -126,104 +134,59 @@ void dlx_set(dlx_t p, int row, int col) {
     die("must add columns in increasing order: %d");
   }
   cell_ptr n = malloc(sizeof(*n));
-  n->U = c->U;
-  c->U = c->U->D = n;
-  n->D = n->c = c;
-  n->R = r->R;
-  r->R = r->R->L = n; 
-  n->L = r;
+  UD_insert(n, c);
+  LR_insert(n, r);
+  n->c = c;
   c->s++;
-  r = n;
+  n->n = row;
 }
 
-void dlx_set_last_row(dlx_t p, int col) {
-  dlx_set(p, darray_count(p->rtab) - 1, col);
+static void cover_col(cell_ptr c) {
+  LR_delete(c);
+  C(i, c, D) C(j, i, R) UD_delete(j)->c->s--;
 }
 
-void cover_col(cell_ptr c) {
-//printf("cover %d\n", cbt_key(c->it));
-  c->R->L = c->L;
-  c->L->R = c->R;
-  for(cell_ptr i = c->D; i != c; i = i->D) {
-    for(cell_ptr j = i->R; j != i; j = j->R) {
-      j->U->D = j->D;
-      j->D->U = j->U;
-      j->c->s--;
-    }
-  }
-}
-
-void uncover_col(cell_ptr c) {
-//printf("uncover %s\n", cbt_key(c->it));
-  for(cell_ptr i = c->U; i != c; i = i->U) {
-    for(cell_ptr j = i->L; j != i; j = j->L) {
-      j->c->s++;
-      j->U->D = j->D->U = j;
-    }
-  }
-  c->R->L = c->L->R = c;
+static void uncover_col(cell_ptr c) {
+  C(i, c, U) C(j, i, L) UD_restore(j)->c->s++;
+  LR_restore(c);
 }
 
 void dlx_cover_row(dlx_t p, int i) {
-  if (i >= darray_count(p->rtab)) die("%d out of range", i);
-  cell_ptr r = p->rtab->item[i];
+  if (i >= p->rtabn) die("%d out of range", i);
+  cell_ptr r = p->rtab[i];
   if (!r) return;
   cover_col(r->c);
-  for(cell_ptr j = r->R; j != r; j = j->R) {
-    cover_col(j->c);
-  }
+  C(j, r, R) cover_col(j->c);
 }
 
-void dlx_search(dlx_t p) {
-  cell_ptr h = p->root;
-  darray_ptr sol = darray_new();
-  void search(int k) {
-    cell_ptr c = h->R;
-    if (c == h) {
-      // Print solution.
-      printf("solution:\n");
-      void pr(void *data) {
-        cell_ptr r = data;
-        while(r->L->c->n < r->c->n) r = r->L;
-        printf("(row %d)", r->n);
-        cell_ptr first = r;
-        do {
-          printf(" %s", p->cid(r->c->n));
-          r = r->R;
-        } while (r != first);
-        printf("\n");
-      }
-      darray_forall(sol, pr);
+void dlx_solve(dlx_t p, int (*cb)(int[], int)) {
+  int sol[p->rtabn], soln = 0;
+  void recurse() {
+    cell_ptr c = p->root->R;
+    if (c == p->root) {
+      cb(sol, soln);
       return;
     }
-    int s = c->s;
-    for(cell_ptr cc = c->R; cc != h; cc = cc->R) {
-      if (cc->s < s) c = cc, s = c->s;
-    }
-printf("lvl %d(%d): %s\n", k, s, p->cid(c->n));
+    int s = INT_MAX;  // S-heuristic: choose first most-constrained column.
+    C(i, p->root, R) if (i->s < s) s = (c = i)->s;
     if (!s) return;
     cover_col(c);
-    for(cell_ptr r = c->D; r != c; r = r->D) {
-      darray_append(sol, r);
-      for(cell_ptr j = r->R; j != r; j = j->R) {
-        cover_col(j->c);
-      }
-      search(k+1);
-      darray_remove_last(sol);
-      for(cell_ptr j = r->L; j != r; j = j->L) {
-        uncover_col(j->c);
-      }
+    C(r, c, D) {
+      sol[soln++] = r->n;
+      C(j, r, R) cover_col(j->c);
+      recurse();
+      soln--;
+      C(j, r, L) uncover_col(j->c);
     }
     uncover_col(c);
   }
-  search(0);
+  recurse();
 }
 
-void dlx_set_col_id(dlx_t p, char *(*cb)(int)) {
-  p->cid = cb;
-}
+int dlx_rows(dlx_t dlx) { return dlx->rtabn; }
+int dlx_cols(dlx_t dlx) { return dlx->ctabn; }
 
-int sudoku_main() {
+int main() {
   static int grid[9][9];
   F(i, 9) {
     char *s = 0;
@@ -237,65 +200,53 @@ int sudoku_main() {
 
   dlx_t dlx = dlx_new();
 
-  darray_ptr con = darray_new();
-  darray_ptr choice = darray_new();
+  int nine(int a, int b, int c) { return ((a * 9) + b) * 9 + c; }
 
-  void constrain(const char *id, ...) {
-    VAPRINT(s, id);
-    darray_append(con, s);
-    dlx_add_col(dlx);
-  }
-
-  void new_row(const char *id, ...) {
-    VAPRINT(s, id);
-    darray_append(choice, s);
-    dlx_add_row(dlx);
-  }
-
-  void add_1(const char *id, ...) {
-    VAPRINT(s, id);
-    F(c, darray_count(con)) if (!strcmp(s, con->item[c])) {
-      dlx_set_last_row(dlx, c);
-      free(s);
-      return;
-    }
-    die("no such contraint %s", s);
-  }
-
-  void choose(const char *id, ...) {
-    VAPRINT(s, id);
-    F(i, darray_count(choice)) if (!strcmp(s, choice->item[i])) {
-      dlx_cover_row(dlx, i);
-      free(s);
-      return;
-    }
-    die("no such choice %s", s);
-  }
-
-  char *constraint_print(int n) { return con->item[n]; }
-  dlx->cid = constraint_print;
-
-  // Setup human-friendly names for columns.
-  // Exactly one digit per box.
-  F(r, 9) F(c, 9) constrain("! %d %d", r, c);
-  // Each digit appears exactly once per row.
-  F(n, 9) F(r, 9) constrain("%d r %d", n, r);
-  // ...per column.
-  F(n, 9) F(c, 9) constrain("%d c %d", n, c);
-  // ... and per 3x3 region.
-  F(n, 9) F(r, 3) F(c, 3) constrain("%d x %d %d", n, r, c);
-
-  // Add rows:
+  // Add constraints.
   F(n, 9) F(r, 9) F(c, 9) {
-    new_row("%d @ %d %d", n, r, c);
-    add_1("! %d %d", r, c);
-    add_1("%d r %d", n, r);
-    add_1("%d c %d", n, c);
-    add_1("%d x %d %d", n, r/3, c/3);
+    int row = nine(n, r, c);
+    dlx_set(dlx, row, nine(0, r, c));
+    dlx_set(dlx, row, nine(1, n, r));
+    dlx_set(dlx, row, nine(2, n, c));
+    dlx_set(dlx, row, nine(3, n, r / 3 * 3 + c / 3));
   }
 
-  F(r, 9) F(c, 9) if (grid[r][c]) choose("%d @ %d %d", grid[r][c] - 1, r, c);
+  // Choose rows corresponding to given digits.
+  F(r, 9) F(c, 9) if(grid[r][c]) dlx_cover_row(dlx, nine(grid[r][c] - 1, r, c));
 
-  dlx_search(dlx);
+  int pr(int row[], int n) {
+    F(i, n) grid[row[i] / 9 % 9][row[i] % 9] = 1 + row[i] / 9 / 9;
+    F(r, 9) {
+      F(c, 9) putchar(grid[r][c] + '0');
+      putchar('\n');
+    }
+    return 0;
+  }
+  dlx_solve(dlx, pr);
+
+/*
+  char *spr(const char *fmt, ...) {
+    va_list params;
+    va_start(params, fmt);
+    char *s;
+    vasprintf(&s, fmt, params);
+    va_end(params);
+    return s;
+  }
+
+  char *con[729];  // Description of constraints.
+  int ncon = 0;
+  void add_con(char *id) {
+    con[ncon++] = id;
+  }
+  // Exactly one digit per box.
+  F(r, 9) F(c, 9) add_con(spr("! %d %d", r, c));
+  // Each digit appears exactly once per row.
+  F(n, 9) F(r, 9) add_con(spr("%d r %d", n, r));
+  // ...per column.
+  F(n, 9) F(c, 9) add_con(spr("%d c %d", n, c));
+  // ... and per 3x3 region.
+  F(n, 9) F(r, 3) F(c, 3) add_con(spr("%d x %d %d", n, r, c));
+  */
   return 0;
 }
