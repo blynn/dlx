@@ -131,6 +131,7 @@ void dlx_set(dlx_t p, int row, int col) {
   if (c->n <= r->c->n) {
     // We enforce this to avoid duplicate columns in a row, and for simplicity,
     // though the algorithm works even if the columns were jumbled.
+    // TODO: Remove this restriction.
     die("must add columns in increasing order: %d");
   }
   cell_ptr n = malloc(sizeof(*n));
@@ -151,7 +152,7 @@ static void uncover_col(cell_ptr c) {
   LR_restore(c);
 }
 
-void dlx_cover_row(dlx_t p, int i) {
+void dlx_pick_row(dlx_t p, int i) {
   if (i >= p->rtabn) die("%d out of range", i);
   cell_ptr r = p->rtab[i];
   if (!r) return;
@@ -159,28 +160,42 @@ void dlx_cover_row(dlx_t p, int i) {
   C(j, r, R) cover_col(j->c);
 }
 
-void dlx_solve(dlx_t p, int (*cb)(int[], int)) {
-  int sol[p->rtabn], soln = 0;
+void dlx_solve(dlx_t p,
+               void (*try_cb)(int, int, int),
+               void (*undo_cb)(void),
+               void (*found_cb)(),
+               void (*stuck_cb)()) {
   void recurse() {
     cell_ptr c = p->root->R;
     if (c == p->root) {
-      cb(sol, soln);
+      if (found_cb) found_cb();
       return;
     }
     int s = INT_MAX;  // S-heuristic: choose first most-constrained column.
     C(i, p->root, R) if (i->s < s) s = (c = i)->s;
-    if (!s) return;
+    if (!s) {
+      if (stuck_cb) stuck_cb();
+      return;
+    }
     cover_col(c);
     C(r, c, D) {
-      sol[soln++] = r->n;
+      if (try_cb) try_cb(c->n, s, r->n);
       C(j, r, R) cover_col(j->c);
       recurse();
-      soln--;
+      if (undo_cb) undo_cb();
       C(j, r, L) uncover_col(j->c);
     }
     uncover_col(c);
   }
   recurse();
+}
+
+void dlx_forall_cover(dlx_t p, void (*cb)(int[], int)) {
+  int sol[p->rtabn], soln = 0;
+  void cover(int c, int s, int r) { sol[soln++] = r; }
+  void uncover() { soln--; }
+  void found() { cb(sol, soln); }
+  dlx_solve(p, cover, uncover, found, NULL);
 }
 
 int dlx_rows(dlx_t dlx) { return dlx->rtabn; }
@@ -212,41 +227,57 @@ int main() {
   }
 
   // Choose rows corresponding to given digits.
-  F(r, 9) F(c, 9) if(grid[r][c]) dlx_cover_row(dlx, nine(grid[r][c] - 1, r, c));
+  F(r, 9) F(c, 9) if (grid[r][c]) dlx_pick_row(dlx, nine(grid[r][c] - 1, r, c));
 
-  int pr(int row[], int n) {
+  void pr(int row[], int n) {
     F(i, n) grid[row[i] / 9 % 9][row[i] % 9] = 1 + row[i] / 9 / 9;
     F(r, 9) {
       F(c, 9) putchar(grid[r][c] + '0');
       putchar('\n');
     }
-    return 0;
   }
-  dlx_solve(dlx, pr);
+  dlx_forall_cover(dlx, pr);
 
-/*
-  char *spr(const char *fmt, ...) {
-    va_list params;
-    va_start(params, fmt);
-    char *s;
-    vasprintf(&s, fmt, params);
-    va_end(params);
-    return s;
-  }
+  // Show how the search works, step by step.
+  {
+    char *spr(const char *fmt, ...) {
+      va_list params;
+      va_start(params, fmt);
+      char *s;
+      vasprintf(&s, fmt, params);
+      va_end(params);
+      return s;
+    }
 
-  char *con[729];  // Description of constraints.
-  int ncon = 0;
-  void add_con(char *id) {
-    con[ncon++] = id;
+    char *con[729];  // Description of constraints.
+    int ncon = 0;
+    void add_con(char *id) {
+      con[ncon++] = id;
+    }
+    // Exactly one digit per box.
+    F(r, 9) F(c, 9) add_con(spr("! %d %d", r+1, c+1));
+    // Each digit appears exactly once per row.
+    F(n, 9) F(r, 9) add_con(spr("%d r %d", n+1, r+1));
+    // ...per column.
+    F(n, 9) F(c, 9) add_con(spr("%d c %d", n+1, c+1));
+    // ... and per 3x3 region.
+    F(n, 9) F(r, 3) F(c, 3) add_con(spr("%d x %d %d", n+1, r+1, c+1));
+
+    void cover(int c, int s, int r) {
+      if (s == 1) {
+        printf("%s forces %d @ %d %d\n", con[c], r/9/9+1, r/9%9+1, r%9+1);
+      } else {
+        printf("%s: %d choices\n", con[c], s);
+        printf("try %d @ %d %d\n", r/9/9+1, r/9%9+1, r%9+1);
+      }
+    }
+    void found() {
+      puts("solved!");
+    }
+    void stuck() {
+      puts("stuck! backtracking...");
+    }
+    dlx_solve(dlx, cover, NULL, found, stuck);
   }
-  // Exactly one digit per box.
-  F(r, 9) F(c, 9) add_con(spr("! %d %d", r, c));
-  // Each digit appears exactly once per row.
-  F(n, 9) F(r, 9) add_con(spr("%d r %d", n, r));
-  // ...per column.
-  F(n, 9) F(c, 9) add_con(spr("%d c %d", n, c));
-  // ... and per 3x3 region.
-  F(n, 9) F(r, 3) F(c, 3) add_con(spr("%d x %d %d", n, r, c));
-  */
   return 0;
 }
