@@ -20,6 +20,7 @@
 
 #define F(i, n) for(int i=0; i<n; i++)
 
+#define NEW_ARRAY(A, MAX) malloc(sizeof(*A) * MAX)
 #define GROW(A, N, MAX) if (N == MAX) A = realloc(A, sizeof(*A) * (MAX *= 2))
 
 #define NORETURN __attribute__((__noreturn__))
@@ -46,15 +47,19 @@ void forall_word(char *s, void f(char *)) {
 char *mallocgets() {
   char *s = 0;
   size_t len = 0;
-  if (-1 == getline(&s, &len, stdin)) return 0;
+  if (-1 == getline(&s, &len, stdin)) {
+    free(s);
+    return 0;
+  }
   // Assumes newline before EOF.
   s[strlen(s) - 1] = 0;
   return s;
 }
 
 struct hint_s {
-  char cmd;
-  int i[8], j[8], k[8], n, dlx_col;
+  char cmd;  // Type of clue.
+  int (*coord)[2], n, coord_max;  // Arguments of clue.
+  int dlx_col;  // If nonzero, base of DLX-columns representing this clue.
 };
 typedef struct hint_s *hint_ptr;
 
@@ -63,10 +68,16 @@ int main() {
   int M = 0, N = 0;
   // Read M lines of N space-delimited fields, terminated by "%%" on a
   // single line by itself.
-  for(char *s = 0; (s = mallocgets()) && strcmp(s, "%%"); free(s)) {
+  for(;;) {
+    char *s = mallocgets();
+    if (!s) die("expected %%");
+    if (!strcmp(s, "%%")) {
+      free(s);
+      break;
+    }
     int n = 0;
     void f(char *s) {
-      int *coord = malloc(sizeof(*coord) * 2);
+      int *coord = NEW_ARRAY(coord, 2);
       coord[0] = M;
       coord[1] = n++;
       if (blt_put_if_absent(blt, s, coord)) die("duplicate symbol: %s", s);
@@ -74,6 +85,7 @@ int main() {
     forall_word(s, f);
     if (!M) N = n; else if (N != n) die("line %d: wrong number of fields", M+1);
     M++;
+    free(s);
   }
   char *sym[M][N];
   int add_sym(BLT_IT *it) {
@@ -84,9 +96,8 @@ int main() {
   blt_forall(blt, add_sym);
 
   // Expect a list of constraints, one per line.
-  int hint_max = 64;
-  int hint_n = 0;
-  hint_ptr *hint = malloc(sizeof(*hint) * hint_max);
+  int hint_n = 0, hint_max = 64;
+  hint_ptr *hint = NEW_ARRAY(hint, hint_max);
   for(char *s = 0; (s = mallocgets()); free(s)) {
     hint_ptr h = 0;
     void f(char *s) {
@@ -95,45 +106,41 @@ int main() {
         h->cmd = *s;
         h->n = 0;
         h->dlx_col = 0;
+        h->coord_max = 2;
+        h->coord = NEW_ARRAY(h->coord, h->coord_max);
         GROW(hint, hint_n, hint_max);
         hint[hint_n++] = h;
         return;
       }
-      h->k[h->n] = 0;
-      char *d = strchr(s, '.');
-      if (d) {
-        *d = 0;
-        h->k[h->n] = atoi(d+1);
-      }
       int *coord = blt_get(blt, s)->data;
       if (!coord) die("invalid symbol: %s", s);
-      h->i[h->n] = coord[0];
-      h->j[h->n] = coord[1];
+      GROW(h->coord, h->n, h->coord_max);
+      F(k, 2) h->coord[h->n][k] = coord[k];
       h->n++;
     }
     forall_word(s, f);
-    if(h->cmd == '>') {
+    if (h->cmd == '>') {
       if (h->n != 2) die("inequality must have exactly 2 fields");
       h->cmd = '<';
-      int tmp;
-      tmp = h->i[0]; h->i[0] = h->i[1], h->i[1] = tmp;
-      tmp = h->j[0]; h->j[0] = h->j[1], h->j[1] = tmp;
-      tmp = h->k[0]; h->k[0] = h->k[1], h->k[1] = tmp;
+      void swap_int(int *x, int *y) { int tmp = *x; *x = *y, *y = tmp; }
+      F(k, 2) swap_int(h->coord[0] + k, h->coord[1] + k);
     }
   }
 
   dlx_t dlx = dlx_new();
 
-  // The first MN DLX-columns represent the symbols.
+  // Generate all possible columns: an M-digit counter in base N.
+  // Columns that pass initial checks become the DLX-rows.
+  int a[M];  // Holds current column.
+  // The first MN DLX-columns represent the symbols. These must be covered;
+  // the others are optional.
   // The symbol at row r and column c corresponds to DLX-column N*r + c.
-  int dlxN = M * N;
-  int dlxM = 0;
-  int dlx_max = 32;
-  int (*dlx_a)[5] = malloc(sizeof(*dlx_a) * dlx_max);
-  int a[M];
-  // Generate all possible columns. An M-digit counter in base N.
+  int dlxM = 0, dlxN = M * N;
+  // The array dlx_a records the columns that pass the initial checks and
+  // hence added as a DLX-row.
+  int dlx_max = 32, (*dlx_a)[M] = NEW_ARRAY(dlx_a, dlx_max);
   void f(int i) {
-    int has(hint_ptr h, int i) { return a[h->i[i]] == h->j[i]; }
+    int has(hint_ptr h, int i) { return a[h->coord[i][0]] == h->coord[i][1]; }
     int match(hint_ptr h) {
       int t = 0;
       F(i, h->n) t += has(h, i);
@@ -146,7 +153,7 @@ int main() {
       // in the column.
       int anon(hint_ptr h) {
         switch(h->cmd) {
-          case 'h': return (has(h, 0) && has(h, 1)) ||
+          case 'p': return (has(h, 0) && has(h, 1)) ||
               (has(h, 2) && has(h, 3)) || (match(h) | 2) != 2;
           case '=': return match(h) == 1;
           case '<':
@@ -178,7 +185,7 @@ int main() {
             assign_dlx_col(h);
             if (has(h, 0)) {
               F(k, N) {
-                if (k == a[h->k[0]] + 1) continue;
+                if (k == a[0] + 1) continue;
                 dlx_set(dlx, dlxM, h->dlx_col + k);
               }
             }
@@ -190,7 +197,7 @@ int main() {
             assign_dlx_col(h);
             if (has(h, 0)) {
               F(k, N) {
-                if (abs(k - a[h->k[0]]) == 1) continue;
+                if (abs(k - a[0]) == 1) continue;
                 dlx_set(dlx, dlxM, h->dlx_col + k);
               }
             }
@@ -201,12 +208,12 @@ int main() {
           case '<':
             assign_dlx_col(h);
             if (has(h, 0)) {
-              for(int k = 0; k <= a[h->k[0]]; k++) {
+              for(int k = 0; k <= a[0]; k++) {
                 dlx_set(dlx, dlxM, h->dlx_col + k);
               }
             }
             if (has(h, 1)) {
-              for(int k = a[h->k[1]]; k < N; k++) {
+              for(int k = a[0]; k < N; k++) {
                 dlx_set(dlx, dlxM, h->dlx_col + k);
               }
             }
@@ -232,6 +239,15 @@ int main() {
     }
   }
   dlx_forall_cover(dlx, pr);
+
   dlx_clear(dlx);
+  free(dlx_a);
+  F(i, hint_n) free(hint[i]->coord), free(hint[i]);
+  free(hint);
+  {
+    int f(BLT_IT *it) { free(it->data); return 1; }
+    blt_forall(blt, f);
+    blt_clear(blt);
+  }
   return 0;
 }
