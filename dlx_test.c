@@ -189,9 +189,64 @@ static void test_sudoku_random_order() {
   dlx_clear(dlx);
 }
 
+void test_counter() {
+  dlx_t dlx = dlx_new();
+  // Set entry (i, 0) for i in [0..9].
+  // and entry (i, 1) for i in [10..13].
+  F(i, 10) dlx_set(dlx, i, 0);
+  F(i, 3) dlx_set(dlx, 10 + i, 1);
+  // The exact covers are pairs of rows r0, r1 where r0 lies in [10..13] and r1
+  // in [0..9].
+  // DLX tries the most constrained column first, and then each row in the
+  // order they were added, so we check r1 + 10*(r0 - 10) goes from 0 to 29.
+  int counter = 0;
+  void f(int r[], int n) {
+    EXPECT(n == 2);
+    EXPECT(r[1] + 10*(r[0] - 10) == counter++);
+  }
+  dlx_forall_cover(dlx, f);
+  EXPECT(30 == counter);
+  dlx_clear(dlx);
+}
+
+void test_perm() {
+  dlx_t dlx = dlx_new();
+  F(i, 4) F(j, 4) {
+    // Consder a string of length 4 and the characters {a, b, c, d}.
+    // Row 4*i + j represents putting the jth character the ith position
+    // of the string. We set column i so that exactly one character will go
+    // into each position, and we set column 4 + j so that each character is
+    // used exactly once. Thus the exact covers map to all the permutations of
+    // "abcd".
+    dlx_set(dlx, 4*i + j, i);
+    dlx_set(dlx, 4*i + j, 4 + j);
+  }
+  int counter = 0;
+  void f(int r[], int n) {
+    char s[5];
+    s[4] = 0;
+    F(i, n) s[r[i]/4] = r[i]%4 + 'a';
+    // Check that the index of s in the list of all sorted permutations
+    // matches the counter.
+    int present[4] = {1,1,1,1}, index = 0;
+    F(i, 4) {
+      index *= 4-i;
+      int k = s[i] - 'a';
+      present[k] = 0;
+      while(--k >= 0) index += present[k];
+    }
+    EXPECT(index == counter++);
+  }
+  dlx_forall_cover(dlx, f);
+  EXPECT(4*3*2*1 == counter);
+  dlx_clear(dlx);
+}
+
 int main() {
   test_sudoku();
   test_sudoku_duplicate_constraints();
   test_sudoku_random_order();
+  test_counter();
+  test_perm();
   return 0;
 }

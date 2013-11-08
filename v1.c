@@ -1,3 +1,5 @@
+// Solves logic grid puzzles using brute force: for each permutation, print it
+// if it satisfies the given constraints.
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>

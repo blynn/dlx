@@ -1,3 +1,9 @@
+// Sudoku solver.
+//
+// Years ago, I wrote a sudoku solver using the dancing links algorithm, and
+// then tried to lib-ify the dancing links part. I found it a bit verbose so
+// I wrote this new standalone sudoku solver. This in turn inspired me to write
+// a new dancing links library.
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>

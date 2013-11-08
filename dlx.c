@@ -108,13 +108,8 @@ void dlx_add_row(dlx_t p) {
   p->rtab[p->rtabn++] = 0;
 }
 
-static void alloc_col(dlx_t p, int n) {
-  while(p->ctabn <= n) dlx_add_col(p);
-}
-
-static void alloc_row(dlx_t p, int n) {
-  while(p->rtabn <= n) dlx_add_row(p);
-}
+static void alloc_col(dlx_t p, int n) { while(p->ctabn <= n) dlx_add_col(p); }
+static void alloc_row(dlx_t p, int n) { while(p->rtabn <= n) dlx_add_row(p); }
 
 void dlx_mark_optional(dlx_t p, int col) {
   alloc_col(p, col);
@@ -126,7 +121,7 @@ void dlx_mark_optional(dlx_t p, int col) {
 void dlx_set(dlx_t p, int row, int col) {
   // We don't bother sorting. DLX works fine with jumbled rows and columns.
   // We just have to watch out for duplicates. (Actually, I think the DLX code
-  // works even with duplicates; it'll just be inefficient.)
+  // works even with duplicates, though it would be inefficient.)
   //
   // For a given column, the UD list is ordered in the order that dlx_set()
   // is called, not by row number. Similarly for a given row and its LR list.
