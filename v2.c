@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h>
 #include "blt.h"
 #include "dlx.h"
 
@@ -33,6 +34,8 @@ void die(const char *err, ...) {
   va_end(params);
   exit(1);
 }
+
+void swap_int(int *x, int *y) { int tmp = *x; *x = *y, *y = tmp; }
 
 void forall_word(char *s, void f(char *)) {
   for(;;) {
@@ -63,72 +66,84 @@ struct hint_s {
 };
 typedef struct hint_s *hint_ptr;
 
-int main() {
-  BLT *blt = blt_new();
-  int M = 0, N = 0;
-  // Read M lines of N space-delimited fields, terminated by "%%" on a
-  // single line by itself.
-  for(;;) {
-    char *s = mallocgets();
-    if (!s) die("expected %%");
-    if (!strcmp(s, "%%")) {
-      free(s);
-      break;
-    }
-    int n = 0;
-    void f(char *s) {
-      int *coord = NEW_ARRAY(coord, 2);
-      coord[0] = M;
-      coord[1] = n++;
-      if (blt_put_if_absent(blt, s, coord)) die("duplicate symbol: %s", s);
-    }
-    forall_word(s, f);
-    if (!M) N = n; else if (N != n) die("line %d: wrong number of fields", M+1);
-    M++;
-    free(s);
-  }
-  char *sym[M][N];
-  int add_sym(BLT_IT *it) {
-    int *coord = it->data;
-    sym[coord[0]][coord[1]] = it->key;
-    return 1;
-  }
-  blt_forall(blt, add_sym);
+void brute(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
+  // For each row except the first, generate all permutations.
+  int perm[M-1][N];
+  F(m, M-1) F(n, N) perm[m][n] = n;
+  void f(int m) {
+    if (m == M-1) {
+      // Base case: see if solution works.
+      int check(hint_ptr h) {
+        int get(int m, int n) { return m ? perm[m-1][n] : n; }
+        int match2(hint_ptr h) {
+          int count = 0;
+          F(n, N) {
+            int t = 0;
+            F(i, h->n) t += get(h->coord[i][0], n) == h->coord[i][1];
+            count += t >= 2;
+          }
+          return count;
+        }
+        int matchmax(hint_ptr h) {
+          int count = 0;
+          F(n, N) {
+            int t = 0;
+            F(i, h->n) t += get(h->coord[i][0], n) == h->coord[i][1];
+            if (count < t) count = t;
+          }
+          return count;
+        }
+        int col(hint_ptr h, int i) {
+          F(n, N) if (get(h->coord[i][0], n) == h->coord[i][1]) return n;
+          die("unreachable");
+        }
 
-  // Expect a list of constraints, one per line.
-  int hint_n = 0, hint_max = 64;
-  hint_ptr *hint = NEW_ARRAY(hint, hint_max);
-  for(char *s = 0; (s = mallocgets()); free(s)) {
-    hint_ptr h = 0;
-    void f(char *s) {
-      if (!h) {
-        h = malloc(sizeof(*h));
-        h->cmd = *s;
-        h->n = 0;
-        h->dlx_col = 0;
-        h->coord_max = 2;
-        h->coord = NEW_ARRAY(h->coord, h->coord_max);
-        GROW(hint, hint_n, hint_max);
-        hint[hint_n++] = h;
+        switch(h->cmd) {
+          case '=': return matchmax(h) < h->n;
+          case '!': return matchmax(h) > 1;
+          case '^': return match2(h) > 1;
+          case '<': return col(h, 0) >= col(h, 1);
+          case '>': return col(h, 0) <= col(h, 1);
+          case '1': return col(h, 0) + 1 != col(h, 1);
+          case 'A': return abs(col(h, 0) - col(h, 1)) != 1;
+          case 'X': {
+            int count = 0;
+            F(n, N) F(i, h->n/2) count +=
+                get(h->coord[i][0], n) == h->coord[i][1] &&
+                get(h->coord[i+1][0], n) == h->coord[i+1][1];
+            return count > 1;
+          }
+        }
+        return 0;
+      }
+      F(i, hint_n) if (check(hint[i])) return;
+      F(n, N) {
+        printf("%s", sym[0][n]);
+        F(m, M-1) printf(" %s", sym[m+1][perm[m][n]]);
+        puts("");
+      }
+      return;
+    }
+    // Generate all permutations of row m.
+    void g(int k) {
+      if (k == N) {
+        // Base case: recurse to next row.
+        f(m + 1);
         return;
       }
-      int *coord = blt_get(blt, s)->data;
-      if (!coord) die("invalid symbol: %s", s);
-      GROW(h->coord, h->n, h->coord_max);
-      F(k, 2) h->coord[h->n][k] = coord[k];
-      h->n++;
+      for(int i = k; i < N; i++) {
+        swap_int(perm[m] + k, perm[m] + i);
+        g(k + 1);
+        swap_int(perm[m] + k, perm[m] + i);
+      }
     }
-    forall_word(s, f);
-    if (h->cmd == '>') {
-      if (h->n != 2) die("inequality must have exactly 2 fields");
-      h->cmd = '<';
-      void swap_int(int *x, int *y) { int tmp = *x; *x = *y, *y = tmp; }
-      F(k, 2) swap_int(h->coord[0] + k, h->coord[1] + k);
-    }
+    g(0);
   }
+  f(0);
+}
 
+void per_col_dlx(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
   dlx_t dlx = dlx_new();
-
   // Generate all possible columns: an M-digit counter in base N.
   // Columns that pass initial checks become the DLX-rows.
   int a[M];  // Holds current column.
@@ -161,7 +176,6 @@ int main() {
           case 'A':
           case '!': return match(h) > 1;
           case 'i': return has(h, 0) && (match(h) | 2) != 2;
-          // TODO: case '^': return matchcount(h) >= 2;
         }
         return 0;
       }
@@ -218,6 +232,24 @@ int main() {
               }
             }
             break;
+          case '^':
+            if (!h->dlx_col) {
+              h->dlx_col = dlxN;
+              dlx_mark_optional(dlx, dlxN++);
+            }
+            int count = 0;
+            F(k, h->n) count += has(h, k);
+            if (count >= 2) {
+              dlx_set(dlx, dlxM, h->dlx_col);
+            }
+            break;
+          case 'X':
+            if (!h->dlx_col) {
+              h->dlx_col = dlxN;
+              dlx_mark_optional(dlx, dlxN++);
+            }
+            F(k, h->n/2) if (has(h, 2*k) && has(h, 2*k + 1)) dlx_set(dlx, dlxM, h->dlx_col);
+            break;
         }
       }
       F(i, hint_n) opthints(hint[i]);
@@ -239,13 +271,103 @@ int main() {
     }
   }
   dlx_forall_cover(dlx, pr);
-
   dlx_clear(dlx);
   free(dlx_a);
+}
+
+int main(int argc, char *argv[]) {
+  void (*alg)(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint)
+      = per_col_dlx;
+  for (;;) {
+    static struct option longopts[] = {
+        {"alg", required_argument, 0, 'a'},
+        {0, 0, 0, 0},
+    };
+    int c = getopt_long(argc, argv, "", longopts, 0);
+    if (c == -1) break;
+    switch(c) {
+      case 'a':
+        if (!strcmp(optarg, "brute")) {
+          alg = brute;
+        } else if (!strcmp(optarg, "per_col_dlx")) {
+          alg = per_col_dlx;
+        } else {
+          printf("Unknown algorithm\n");
+          exit(0);
+        }
+        break;
+      case '?':
+        exit(0);
+      default: die("unreachable!");
+    }
+  }
+  BLT *blt = blt_new();
+  int M = 0, N = 0;
+  // Read M lines of N space-delimited fields, terminated by "%%" on a
+  // single line by itself.
+  for(;;) {
+    char *s = mallocgets();
+    if (!s) die("expected %%%%");
+    if (!strcmp(s, "%%")) {
+      free(s);
+      break;
+    }
+    int n = 0;
+    void f(char *s) {
+      int *coord = NEW_ARRAY(coord, 2);
+      coord[0] = M;
+      coord[1] = n++;
+      if (blt_put_if_absent(blt, s, coord)) die("duplicate symbol: %s", s);
+    }
+    forall_word(s, f);
+    if (!M) N = n; else if (N != n) die("line %d: wrong number of fields", M+1);
+    M++;
+    free(s);
+  }
+  char *sym[M][N];
+  void add_sym(BLT_IT *it) {
+    int *coord = it->data;
+    sym[coord[0]][coord[1]] = it->key;
+  }
+  blt_forall(blt, add_sym);
+
+  // Expect a list of constraints, one per line.
+  int hint_n = 0, hint_max = 64;
+  hint_ptr *hint = NEW_ARRAY(hint, hint_max);
+  for(char *s = 0; (s = mallocgets()); free(s)) {
+    hint_ptr h = 0;
+    void f(char *s) {
+      if (!h) {
+        h = malloc(sizeof(*h));
+        h->cmd = *s;
+        h->n = 0;
+        h->dlx_col = 0;
+        h->coord_max = 2;
+        h->coord = NEW_ARRAY(h->coord, h->coord_max);
+        GROW(hint, hint_n, hint_max);
+        hint[hint_n++] = h;
+        return;
+      }
+      BLT_IT *it = blt_get(blt, s);
+      if (!it) die("invalid symbol: %s", s);
+      int *coord = it->data;
+      GROW(h->coord, h->n, h->coord_max);
+      F(k, 2) h->coord[h->n][k] = coord[k];
+      h->n++;
+    }
+    forall_word(s, f);
+    if (h->cmd == '>') {
+      if (h->n != 2) die("inequality must have exactly 2 fields");
+      h->cmd = '<';
+      F(k, 2) swap_int(h->coord[0] + k, h->coord[1] + k);
+    }
+  }
+
+  alg(M, N, sym, hint_n, hint);
   F(i, hint_n) free(hint[i]->coord), free(hint[i]);
   free(hint);
   {
-    int f(BLT_IT *it) { free(it->data); return 1; }
+    void f(BLT_IT *it) { free(it->data); }
     blt_forall(blt, f);
     blt_clear(blt);
   }
