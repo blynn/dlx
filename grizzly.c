@@ -1,15 +1,34 @@
-// Solves logic grid puzzles using the DLX algorithm.
+// = Grizzly =
 //
-// We view a logic grid puzzle as follows. Given a MxN table of objects and
-// some constraints, for each row except the first, we are to permute its
-// entries so that the table satisfies the constraints.
+// Solves logic grid puzzles. By default, uses the DLX agorithm, but
+// uses brute force if --alg=brute is given on the command-line.
 //
-// The simplest constraints specify that 2 particular objects must lie in
-// the same column, or lie in different columns. More complex ones involve
-// ordering.
+// We view a logic grid puzzle as follows. Given a MxN table of distinct
+// symbols and some constraints, for each row except the first, we are to
+// permute its entries so that the table satisfies the constraints.
 //
-// DLX also involves rows and columns. To avoid confusion, we'll use the
-// terms DLX-rows and DLX-columns for these.
+// DLX also involves rows and columns. To avoid confusion, we call them
+// DLX-rows and DLX-columns.
+//
+// == Constraint language ==
+//
+// Each constraint is described by a single line containing space-delimited
+// fields. The first field is the constraint type, and the remainder are
+// symbols. The meaning of each constraint type is as follows:
+//
+// |============================================================================
+// |  !  | given symbols lie in distinct columns
+// |  =  | given symbols lie in the same column
+// |  <  | column of 1st symbol lies left of column of 2nd symbol
+// |  >  | column of 1st symbol lies right of column of 2nd symbol
+// |  A  | column of 1st symbol is adjacent to column of 2nd symbol
+// |  1  | column of 1st symbol lies one to the left of the column of 2nd symbol
+// |  i  | column of 1st symbol contains exactly one of the following symbols
+// |  ^  | at most one column contains 2 or more of the given symbols
+// |  p  | first 2 symbols lie in distinct columns; next 2 symbols lie in distinct columns; each column contains exactly 0 or 2 of these 4 symbols
+// |  X  | group symbols in pairs; at most one of these pairs lie in the same column
+// |============================================================================
+
 #define _GNU_SOURCE
 #include <stdarg.h>
 #include <stdio.h>
@@ -75,42 +94,54 @@ void brute(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
       // Base case: see if solution works.
       int check(hint_ptr h) {
         int get(int m, int n) { return m ? perm[m-1][n] : n; }
-        int match2(hint_ptr h) {
+        int has(int i, int n) { return get(h->coord[i][0], n) == h->coord[i][1]; }
+        int matchmax() {
           int count = 0;
           F(n, N) {
             int t = 0;
-            F(i, h->n) t += get(h->coord[i][0], n) == h->coord[i][1];
-            count += t >= 2;
-          }
-          return count;
-        }
-        int matchmax(hint_ptr h) {
-          int count = 0;
-          F(n, N) {
-            int t = 0;
-            F(i, h->n) t += get(h->coord[i][0], n) == h->coord[i][1];
+            F(i, h->n) t += has(i, n);
             if (count < t) count = t;
           }
           return count;
         }
-        int col(hint_ptr h, int i) {
-          F(n, N) if (get(h->coord[i][0], n) == h->coord[i][1]) return n;
+        int col(int i) {
+          F(n, N) if (has(i, n)) return n;
           die("unreachable");
         }
 
         switch(h->cmd) {
-          case '=': return matchmax(h) < h->n;
-          case '!': return matchmax(h) > 1;
-          case '^': return match2(h) > 1;
-          case '<': return col(h, 0) >= col(h, 1);
-          case '>': return col(h, 0) <= col(h, 1);
-          case '1': return col(h, 0) + 1 != col(h, 1);
-          case 'A': return abs(col(h, 0) - col(h, 1)) != 1;
+          case '=': return matchmax() < h->n;
+          case '!': return matchmax() > 1;
+          case '^': {
+            int count = 0;
+            F(n, N) {
+              int t = 0;
+              F(i, h->n) t += has(i, n);
+              count += t >= 2;
+            }
+            return count > 1;
+          }
+          case '<': return col(0) >= col(1);
+          case '>': return col(0) <= col(1);
+          case '1': return col(0) + 1 != col(1);
+          case 'A': return abs(col(0) - col(1)) != 1;
+          case 'i':
+            F(n, N) if (has(0, n)) {
+              for (int i = 1; i < h->n; i++) if (has(i, n)) return 0;
+              return 1;
+            }
+          case 'p':
+            F(n, N) {
+              if (has(0, n) && has(1, n)) return 1;
+              if (has(2, n) && has(3, n)) return 1;
+              int t = 0;
+              F(i, 4) t += has(i, n);
+              if ((t | 2) != 2) return 1;
+            }
+            return 0;
           case 'X': {
             int count = 0;
-            F(n, N) F(i, h->n/2) count +=
-                get(h->coord[i][0], n) == h->coord[i][1] &&
-                get(h->coord[i+1][0], n) == h->coord[i+1][1];
+            F(n, N) F(i, h->n/2) count += has(2*i, n) && has(2*i + 1, n);
             return count > 1;
           }
         }

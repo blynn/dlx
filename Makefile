@@ -1,4 +1,4 @@
-CFLAGS=-O3 --std=gnu99
+CFLAGS=-O3 --std=gnu99 -Wall
 
 grizzly: grizzly.c dlx.c
 	$(CC) $(CFLAGS) -o $@ $^ -I ../blt ../blt/blt.c
@@ -6,7 +6,7 @@ grizzly: grizzly.c dlx.c
 suds: suds.c
 
 dlx_test: dlx_test.c dlx.c
-	cc -g --std=gnu99 -o $@ $^
+	cc -g --std=gnu99 -Wall -o $@ $^
 
 grind: dlx_test
 	valgrind ./dlx_test
