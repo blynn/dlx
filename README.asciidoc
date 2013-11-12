@@ -1,0 +1,181 @@
+= The DLX Library =
+Ben Lynn <blynn@cs.stanford.edu>
+2013
+
+== The DLX library ==
+
+The DLX library solves instances of the exact cover problem, using Dancing
+Links (Knuth's Algorithm X).
+
+Also included are programs that use the library:
+
+ * Suds: a sudoku solver that represents a sudoku puzzle as an exact cover problem instance.
+ * Grizzly: a "logic grid puzzle" solver. Requires my https://github.com/blynn/blt[BLT library].
+ 
+== Building everything ==
+
+The following should work:
+
+ $ git clone https://github.com/blynn/blt
+ $ git clone https://github.com/blynn/dlx
+ $ cd dlx
+ $ make
+ $ ./suds < platinum.sud
+ $ ./grizzly < zebra.gr
+
+== DLX example ==
+
+Consider the following table, where the last column is optional:
+
+[cols="s,3*",options="header",width="10%"]
+|=======
+| |0|1|2
+|0|1|0|1
+|1|0|1|1
+|2|0|1|0
+|3|1|1|0
+|=======
+
+Since covering the last column is optional, there are two solutions:
+
+  1. Rows 0 and 2.
+  2. Row 3 by itself.
+
+The following program should confirm this.
+
+------------------------------------------------------------------------------
+#include <stdio.h>
+#include "dlx.h"
+int main() {
+  // Initialize a new exact cover instance.
+  dlx_t dlx = dlx_new();
+
+  // Setup the rows
+  dlx_set(dlx, 0, 0);
+  dlx_set(dlx, 0, 2);
+  dlx_set(dlx, 1, 1);
+  dlx_set(dlx, 1, 2);
+  dlx_set(dlx, 2, 1);
+  dlx_set(dlx, 3, 0);
+  dlx_set(dlx, 3, 1);
+
+  // Mark the last column as optional.
+  dlx_mark_optional(dlx, 2);
+
+  void f(int row[], int n) {
+    printf("Solution: rows:");
+    for(int i = 0; i < n; i++) {
+      printf(" %d", row[i]);
+    }
+    printf("\n");
+  }
+  dlx_forall_cover(dlx, f);
+
+  // Clean up.
+  dlx_clear(dlx);
+  return 0;
+}
+------------------------------------------------------------------------------
+
+== Suds ==
+
+Suds reads from standard input and ignores all characters except for the digits
+and ".". Nonzero digits represent themsleves and "0" or "." represents an
+unknown digit.
+
+Shows step-by-step reasoning when run with `-v`.
+
+See `platinum.sud` for an example input.
+
+== Grizzly ==
+
+We view a logic grid puzzle as follows. Given a MxN table of distinct symbols
+and some constraints, for each row except the first, we are to permute its
+entries so that the table satisfies the constraints.
+
+Grizzly reads a logic grid puzzle from standard input and prints all its
+solutions. If run with `--alg=brute`, Grizzly employs brute force instead of
+Dancing Links.
+
+The input should begin with M lines of N space-delimited fields, terminated by
+"%%" on a single line by itself. This should be followed by the constraints.
+Each constraint is described by a single line containing space-delimited
+fields. The first field is the constraint type, and the remainder are
+symbols.
+
+An example 2x3 puzzle:
+
+------------------------------------------------------------------------------
+Alice Bob Carol
+bandoneon kazoo theremin
+%%
+! Carol kazoo
+= Alice theremin
+------------------------------------------------------------------------------
+
+The meaning of each constraint type is as follows:
+
+[cols="1,80"]
+|============================================================================
+|  !  | given symbols lie in distinct columns
+|  =  | given symbols lie in the same column
+|  <  | column of 1st symbol lies left of column of 2nd symbol
+|  >  | column of 1st symbol lies right of column of 2nd symbol
+|  A  | column of 1st symbol is adjacent to column of 2nd symbol
+|  1  | column of 1st symbol lies one to the left of the column of 2nd symbol
+|  i  | column of 1st symbol contains exactly one of the following symbols
+|  ^  | at most one column contains 2 or more of the given symbols
+|  p  | first 2 symbols lie in distinct columns; next 2 symbols lie in distinct columns; each column contains exactly 0 or 2 of these 4 symbols
+|  X  | group symbols in pairs; at most one of these pairs lie in the same column
+|============================================================================
+
+Thus in the above example, the original logic puzzle might have stipulated that "Alice does not play the kazoo." and "Carol plays the theremin."
+
+Grizzly prints the transpose of the solution, possibly out of order.
+In other words, the symbols in the same row in the input are instead in the
+same _column_ in the output, and the first symbols of the rows in the output
+may be in a different order than the symbols in the first row of the input.
+
+  Alice theremin
+  Carol bandoneon
+  Bob kazoo
+
+See `zebra.gr`, which encodes http://en.wikipedia.org/wiki/Zebra_Puzzle[the
+Zebra Puzzle].
+
+I'm still working on the constraint language. I chose one-character commands
+for easy typing and parsing.
+
+Originally, "=" meant that one column contained at least 2 of the given
+symbols. This is easy to check in the brute force solver, and allows some
+puzzles to be encoded with fewer types of rules, but it is a troublesome
+constraint for the Dancing Links solver so I changed the meaning to the above.
+
+The "p" constraint (I chose "p" for "pairs") can be rewritten as two "i"
+constraints plus one "!" constraint, but numerous puzzles contained clues
+describing equalities between sets of size 2, such as: "Of Jack and Jill, one
+is wearing mukluks and the other was born in Timbuktu."
+
+I found no puzzles depended on the order of the input symbols in any row apart
+from the first, so I shelved my original plans to support this. Puzzles only
+seem to care about the order of the symbols in the first row.
+
+The "X" constraint functions as a catch-all to handle constraints that seem
+tricky to otherwise describe.
+
+== License ==
+
+See `COPYING` for details.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 51 Franklin
+Street, Fifth Floor, Boston, MA 02110-1301  USA

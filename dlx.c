@@ -1,3 +1,4 @@
+// See http://en.wikipedia.org/wiki/Dancing_Links.
 #include <limits.h>
 #include <stdlib.h>
 #include "dlx.h"

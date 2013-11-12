@@ -9,25 +9,6 @@
 //
 // DLX also involves rows and columns. To avoid confusion, we call them
 // DLX-rows and DLX-columns.
-//
-// == Constraint language ==
-//
-// Each constraint is described by a single line containing space-delimited
-// fields. The first field is the constraint type, and the remainder are
-// symbols. The meaning of each constraint type is as follows:
-//
-// |============================================================================
-// |  !  | given symbols lie in distinct columns
-// |  =  | given symbols lie in the same column
-// |  <  | column of 1st symbol lies left of column of 2nd symbol
-// |  >  | column of 1st symbol lies right of column of 2nd symbol
-// |  A  | column of 1st symbol is adjacent to column of 2nd symbol
-// |  1  | column of 1st symbol lies one to the left of the column of 2nd symbol
-// |  i  | column of 1st symbol contains exactly one of the following symbols
-// |  ^  | at most one column contains 2 or more of the given symbols
-// |  p  | first 2 symbols lie in distinct columns; next 2 symbols lie in distinct columns; each column contains exactly 0 or 2 of these 4 symbols
-// |  X  | group symbols in pairs; at most one of these pairs lie in the same column
-// |============================================================================
 
 #define _GNU_SOURCE
 #include <stdarg.h>
@@ -85,6 +66,7 @@ struct hint_s {
 };
 typedef struct hint_s *hint_ptr;
 
+// Solves using brute force.
 void brute(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
   // For each row except the first, generate all permutations.
   int perm[M-1][N];
@@ -173,6 +155,8 @@ void brute(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
   f(0);
 }
 
+// Solves using DLX where each possible column corresponds to a subset in
+// the collection.
 void per_col_dlx(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
   dlx_t dlx = dlx_new();
   // Generate all possible columns: an M-digit counter in base N.

@@ -242,11 +242,51 @@ void test_perm() {
   dlx_clear(dlx);
 }
 
+void test_readme_example() {
+  // Initialize a new exact cover instance.
+  dlx_t dlx = dlx_new();
+
+  // Setup the rows
+  dlx_set(dlx, 0, 0);
+  dlx_set(dlx, 0, 2);
+  dlx_set(dlx, 1, 1);
+  dlx_set(dlx, 1, 2);
+  dlx_set(dlx, 2, 1);
+  dlx_set(dlx, 3, 0);
+  dlx_set(dlx, 3, 1);
+
+  // Mark the last column as optional.
+  dlx_mark_optional(dlx, 2);
+
+  int k = 0;
+  void f(int row[], int n) {
+    switch(k++) {
+      case 0:
+        EXPECT(n == 2);
+        EXPECT(row[0] == 0);
+        EXPECT(row[1] == 2);
+        break;
+      case 1:
+        EXPECT(n == 1);
+        EXPECT(row[0] == 3);
+        break;
+      default:
+        EXPECT(0);  // BUG!
+        break;
+    }
+  }
+  dlx_forall_cover(dlx, f);
+
+  // Clean up.
+  dlx_clear(dlx);
+}
+
 int main() {
   test_sudoku();
   test_sudoku_duplicate_constraints();
   test_sudoku_random_order();
   test_counter();
   test_perm();
+  test_readme_example();
   return 0;
 }
