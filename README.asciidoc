@@ -129,7 +129,8 @@ The meaning of each constraint type is as follows:
 |  X  | group symbols in pairs; at most one of these pairs lie in the same column
 |============================================================================
 
-Thus in the above example, the original logic puzzle might have stipulated that "Alice does not play the kazoo." and "Carol plays the theremin."
+Thus in the above example, the original logic puzzle might have stipulated that
+"Carol does not play the kazoo." and "Alice plays the theremin."
 
 Grizzly prints the transpose of the solution, possibly out of order.
 In other words, the symbols in the same row in the input are instead in the
