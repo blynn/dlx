@@ -355,10 +355,6 @@ void per_cell_dlx(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
         }
         break;
       case '<':
-        if (!h->coord[0][0] && !h->coord[1][0]) {
-          printf("redundant or bad inequality\n");
-          break;
-        }
         if (!h->coord[0][0]) {
           F(k, h->coord[0][1]+1) remove_me[row_of(1, k)] = 1;
           break;
@@ -375,6 +371,32 @@ void per_cell_dlx(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
         }
         F(k, N) dlx_mark_optional(dlx, base++);
         break;
+      case '1': {
+        int x = !h->coord[1][0];
+        if (!h->coord[x][0]) {
+          F(k, N) if (h->coord[x][1] - k != 1) remove_me[row_of(!x, k)] = 1; 
+          break;
+        }
+        F(k, N) {
+          dlx_set(dlx, row_of(0, k), base + k);
+          F(n, N) if (n - k != 1) dlx_set(dlx, row_of(1, n), base + k);
+        }
+        F(k, N) dlx_mark_optional(dlx, base++);
+        break;
+      }
+      case 'A': {
+        int x = !h->coord[1][0];
+        if (!h->coord[x][0]) {
+          F(k, N) if (abs(h->coord[x][1] - k) != 1) remove_me[row_of(!x, k)] = 1; 
+          break;
+        }
+        F(k, N) {
+          dlx_set(dlx, row_of(0, k), base + k);
+          F(n, N) if (abs(n - k) != 1) dlx_set(dlx, row_of(1, n), base + k);
+        }
+        F(k, N) dlx_mark_optional(dlx, base++);
+        break;
+      }
     }
   }
   F(r, (M-1)*N*N) if (remove_me[r]) dlx_remove_row(dlx, r);
@@ -394,7 +416,7 @@ void per_cell_dlx(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
 
 int main(int argc, char *argv[]) {
   void (*alg)(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint)
-      = per_cell_dlx;
+      = per_col_dlx;
   for (;;) {
     static struct option longopts[] = {
         {"alg", required_argument, 0, 'a'},
