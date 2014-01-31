@@ -28,8 +28,12 @@ void dlx_set(dlx_t dlx, int row, int col);
 // but it still must respect the constraints it entails.
 void dlx_mark_optional(dlx_t dlx, int col);
 
-// Picks a row to be part of the solution. Returns 0 on success, -1 otherwise.
+// Removes a row from consideration. Returns 0 on success, -1 otherwise.
 // Should only be called after all dlx_set() calls.
+int dlx_remove_row(dlx_t p, int row);
+
+// Picks a row to be part of the solution. Returns 0 on success, -1 otherwise.
+// Should only be called after all dlx_set() calls and dlx_remove_row() calls.
 // TODO: Check the row can be legally chosen.
 int dlx_pick_row(dlx_t dlx, int row);
 

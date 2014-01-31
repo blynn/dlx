@@ -160,11 +160,23 @@ static void uncover_col(cell_ptr c) {
 }
 
 int dlx_pick_row(dlx_t p, int i) {
-  if (i >= p->rtabn) return -1;
+  if (i < 0 || i >= p->rtabn) return -1;
   cell_ptr r = p->rtab[i];
   if (!r) return 0;  // Empty row.
   cover_col(r->c);
   C(j, r, R) cover_col(j->c);
+  return 0;
+}
+
+int dlx_remove_row(dlx_t p, int i) {
+  if (i < 0 || i >= p->rtabn) return -1;
+  cell_ptr r = p->rtab[i];
+  if (!r) return 0;  // Empty row.
+  UD_delete(r)->c->s--;
+  C(j, r, R){
+    UD_delete(j)->c->s--;
+  }
+  p->rtab[i] = 0;
   return 0;
 }
 

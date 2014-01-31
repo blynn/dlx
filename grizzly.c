@@ -281,7 +281,10 @@ void per_col_dlx(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
   // Solve!
   void pr(int row[], int n) {
     F(i, n) {
-      F(k, M) printf(" %s", sym[k][dlx_a[row[i]][k]]);
+      F(k, M) {
+        if (k) putchar(' ');
+        printf("%s", sym[k][dlx_a[row[i]][k]]);
+      }
       putchar('\n');
     }
   }
@@ -290,9 +293,108 @@ void per_col_dlx(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
   free(dlx_a);
 }
 
+void per_cell_dlx(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint) {
+  dlx_t dlx = dlx_new();
+  // It's easier to add all rows then subtract forbidden rows at the end than
+  // to attempt a purely additive construction of the DLX-table.
+  int remove_me[(M-1)*N*N];
+
+  // DLX-rows: row (m*N + n)*N + k = sym[m+1][n] in the kth column.
+  F(m, M-1) F(n, N) F(k, N) {
+    int r = (m*N + n)*N + k;
+    // sym[m+1][n] must be used exactly once.
+    dlx_set(dlx, r, m*N + n);
+    // solution[m+1][k] must contain exactly one symbol.
+    dlx_set(dlx, r, (M-1)*N + m*N + k);
+    remove_me[r] = 0;
+  }
+
+  // The first row of the puzzle is a special case, complicating our code.
+  int sol[M-1][N];
+  F(m, M-1) F(n, N) sol[m][n] = -1;
+  int base = 2*(M-1)*N;
+  F(i, hint_n) {
+    hint_ptr h = hint[i];
+    int row_of(int x, int k) {
+      return ((h->coord[x][0] - 1)*N + h->coord[x][1])*N + k;
+    }
+    switch(h->cmd) {
+      case '=': {
+        int firstrow = 0;
+        F(x, h->n) if (!h->coord[x][0]) {
+          F(y, h->n) if (x != y) {
+            sol[h->coord[y][0] - 1][h->coord[x][1]] = h->coord[y][1];
+          }
+          firstrow = 1;
+          break;
+        }
+        if (firstrow) break;
+
+        F(x, h->n) F(k, N) {
+          dlx_set(dlx, row_of(x, k), base + k);
+          F(y, h->n) if (x != y) F(n, N) if (n != k) {
+            dlx_set(dlx, row_of(y, n), base + k);
+          }
+          F(k, N) dlx_mark_optional(dlx, base++);
+        }
+        break;
+      }
+      case '!':
+        F(x, h->n) {
+          if (!h->coord[x][0]) {
+            F(y, h->n) if (x != y && h->coord[y][0]) {
+              remove_me[row_of(y, h->coord[x][1])] = 1;
+            }
+          } else F(k, N) {
+            dlx_set(dlx, row_of(x, k), base + k);
+            F(y, h->n) if (x != y && h->coord[y][0]) {
+              dlx_set(dlx, row_of(y, k), base + k);
+            }
+            F(k, N) dlx_mark_optional(dlx, base++);
+          }
+        }
+        break;
+      case '<':
+        if (!h->coord[0][0] && !h->coord[1][0]) {
+          printf("redundant or bad inequality\n");
+          break;
+        }
+        if (!h->coord[0][0]) {
+          F(k, h->coord[0][1]+1) remove_me[row_of(1, k)] = 1;
+          break;
+        }
+        if (!h->coord[1][0]) {
+          for (int k = h->coord[1][1]; k < N; k++) {
+            remove_me[row_of(0, k)] = 1;
+          }
+          break;
+        }
+        F(k, N) {
+          dlx_set(dlx, row_of(0, k), base + k);
+          F(n, k+1) dlx_set(dlx, row_of(1, n), base + k);
+        }
+        F(k, N) dlx_mark_optional(dlx, base++);
+        break;
+    }
+  }
+  F(r, (M-1)*N*N) if (remove_me[r]) dlx_remove_row(dlx, r);
+  F(m, M-1) F(n, N) if (sol[m][n] >= 0) dlx_pick_row(dlx, (m*N + sol[m][n])*N + n);
+  // Solve!
+  void f(int row[], int row_n) {
+    F(i, row_n) sol[row[i]/N/N][row[i]%N] = row[i]/N%N;
+    F(n, N) {
+      printf("%s", sym[0][n]);
+      F(m, M-1) printf(" %s", sym[m+1][sol[m][n]]);
+      putchar('\n');
+    }
+  }
+  dlx_forall_cover(dlx, f);
+  dlx_clear(dlx);
+}
+
 int main(int argc, char *argv[]) {
   void (*alg)(int M, int N, char *sym[M][N], int hint_n, hint_ptr *hint)
-      = per_col_dlx;
+      = per_cell_dlx;
   for (;;) {
     static struct option longopts[] = {
         {"alg", required_argument, 0, 'a'},
@@ -306,6 +408,8 @@ int main(int argc, char *argv[]) {
           alg = brute;
         } else if (!strcmp(optarg, "per_col_dlx")) {
           alg = per_col_dlx;
+        } else if (!strcmp(optarg, "per_cell_dlx")) {
+          alg = per_cell_dlx;
         } else {
           printf("Unknown algorithm\n");
           exit(0);
