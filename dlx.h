@@ -12,7 +12,7 @@ typedef struct dlx_s *dlx_t;
 dlx_t dlx_new();
 
 // Frees exact cover problem.
-void dlx_clear();
+void dlx_clear(dlx_t dlx);
 
 // Returns number of rows.
 int dlx_rows(dlx_t dlx);
