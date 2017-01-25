@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
   dlx_forall_cover(dlx, print_solution);
   if (verbose) {
     // Print reasoning.
-    int kid[9*9], n = 0, tried[9*9] = { 0 }, indent;
+    int kid[9*9], n = 0, tried[9*9] = { 0 }, indent = 0;
     void tabs() { F(i, indent) fputs("  ", stdout); }
     void con(int c) {
       int k = c%(9*9);
