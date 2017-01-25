@@ -17,4 +17,3 @@ grind: dlx_test
 
 push:
 	git push git@github.com:blynn/dlx.git master
-	git push https://code.google.com/p/blynn-dlx/ master
