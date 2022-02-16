@@ -67,19 +67,21 @@ dlx_t dlx_new() {
   return p;
 }
 
+void free_row(cell_ptr r) {
+  cell_ptr next;
+  for(cell_ptr j = r->R; j != r; j = next) {
+    next = j->R;
+    free(j);
+  }
+  free(r);
+}
+
 void dlx_clear(dlx_t p) {
   // Elements in the LR list for each row are never covered, thus all cells
   // can be accessed from the 'rtab' LR lists.
   F(i, p->rtabn) {
     cell_ptr r = p->rtab[i];
-    if (r) {
-      cell_ptr next;
-      for(cell_ptr j = r->R; j != r; j = next) {
-        next = j->R;
-        free(j);
-      }
-      free(r);
-    }
+    if (r) free_row(r);
   }
   // Columns may be covered, but they are always accessible from 'ctab'.
   F(i, p->ctabn) free(p->ctab[i]);
@@ -177,6 +179,7 @@ int dlx_remove_row(dlx_t p, int i) {
     UD_delete(j)->c->s--;
   }
   p->rtab[i] = 0;
+  free_row(r);
   return 0;
 }
 
